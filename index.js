@@ -142,7 +142,7 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 			loaded: 0,
 			done: false,
 		};
-		return fetch(file + (file.indexOf('?') === -1 ? '?v=20261021111616' : ''), { cache: 'no-store' }).then(function (response) {
+		return fetch(file + (file.indexOf('?') === -1 ? '?v=20261021111833' : ''), { cache: 'no-store' }).then(function (response) {
 			if (!response.ok) {
 				return Promise.reject(new Error(`Failed loading file '${file}'`));
 			}
