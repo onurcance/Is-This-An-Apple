@@ -7,7 +7,7 @@
 		<meta http-equiv="Expires" content="0">
 		<script>
 		(function() {
-			var BUILD_VERSION = "20261028180709";
+			var BUILD_VERSION = "20261028182741";
 			try {
 				if (window.location.search.indexOf("_v=" + BUILD_VERSION) !== -1 && window.history && window.history.replaceState) {
 					window.history.replaceState(null, "", window.location.pathname + window.location.hash);
@@ -33,6 +33,94 @@
 							});
 						}
 					}).catch(function() {});
+			} catch (e) {}
+
+			// WebAudio Pre-Warm & Auto-Resume Hook so Main Menu theme music starts immediately
+			try {
+				var OrigAudioCtx = window.AudioContext || window.webkitAudioContext;
+				if (OrigAudioCtx) {
+					window.__appleAudioCtx = null;
+					window.__appleAudioWorkletReady = false;
+					window.__applePrewarmCtx = null;
+					window.__appleTryResumeAudio = function() {
+						try {
+							if (window.__applePrewarmCtx && window.__applePrewarmCtx.state === "suspended") {
+								window.__applePrewarmCtx.resume().catch(function() {});
+							}
+							if (window.__appleAudioCtx && window.__appleAudioCtx.state !== "running") {
+								window.__appleAudioCtx.resume().catch(function() {});
+							}
+						} catch (e) {}
+					};
+					var WrappedAudioContext = function(opts) {
+						var ctx = (opts !== undefined) ? new OrigAudioCtx(opts) : new OrigAudioCtx();
+						if (!window.__appleIsPrewarmConstructing) {
+							window.__appleAudioCtx = ctx;
+							window.__appleAudioWorkletReady = false;
+							if (ctx.audioWorklet && typeof ctx.audioWorklet.addModule === "function") {
+								var origAddModule = ctx.audioWorklet.addModule.bind(ctx.audioWorklet);
+								ctx.audioWorklet.addModule = function(moduleUrl, options) {
+									var p = origAddModule(moduleUrl, options);
+									p.then(function() {
+										if (String(moduleUrl).indexOf("audio.worklet") !== -1) {
+											window.__appleAudioWorkletReady = true;
+										}
+										window.__appleTryResumeAudio();
+									}).catch(function() {
+										window.__appleAudioWorkletReady = true;
+									});
+									return p;
+								};
+							} else {
+								window.__appleAudioWorkletReady = true;
+							}
+							setTimeout(function() {
+								window.__appleAudioWorkletReady = true;
+								window.__appleTryResumeAudio();
+							}, 220);
+							try {
+								ctx.addEventListener("statechange", function() {
+									if (ctx.state !== "running") {
+										window.__appleTryResumeAudio();
+									}
+								});
+							} catch (e) {}
+							window.__appleTryResumeAudio();
+						}
+						return ctx;
+					};
+					WrappedAudioContext.prototype = OrigAudioCtx.prototype;
+					Object.setPrototypeOf(WrappedAudioContext, OrigAudioCtx);
+					window.AudioContext = WrappedAudioContext;
+					if (window.webkitAudioContext) {
+						window.webkitAudioContext = WrappedAudioContext;
+					}
+					var onUserInteraction = function(ev) {
+						try {
+							if (!window.__appleAudioCtx && !window.__applePrewarmCtx && ev && ev.type !== "pointermove" && ev.type !== "mousemove") {
+								window.__appleIsPrewarmConstructing = true;
+								window.__applePrewarmCtx = new OrigAudioCtx();
+								window.__appleIsPrewarmConstructing = false;
+								var buf = window.__applePrewarmCtx.createBuffer(1, 1, 22050);
+								var src = window.__applePrewarmCtx.createBufferSource();
+								src.buffer = buf;
+								src.connect(window.__applePrewarmCtx.destination);
+								src.start(0);
+							}
+						} catch (e) {
+							window.__appleIsPrewarmConstructing = false;
+						}
+						window.__appleTryResumeAudio();
+					};
+					var events = ["pointerdown", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keyup", "click", "pointermove"];
+					for (var i = 0; i < events.length; i++) {
+						window.addEventListener(events[i], onUserInteraction, { capture: true, passive: true });
+						document.addEventListener(events[i], onUserInteraction, { capture: true, passive: true });
+					}
+					document.addEventListener("visibilitychange", function() {
+						if (!document.hidden) window.__appleTryResumeAudio();
+					});
+				}
 			} catch (e) {}
 		})();
 		</script>
@@ -124,8 +212,8 @@ body {
 	z-index: 1;
 }
 		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png?v=20261028180709" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png?v=20261028180709"/>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png?v=20261028182741" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png?v=20261028182741"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" /><style>html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #0d0d0d !important; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } #canvas { width: 100vw !important; height: 100vh !important; width: 100dvw !important; height: 100dvh !important; display: block; background-color: #0d0d0d !important; }</style><script>(function(){function syncViewport(){window.dispatchEvent(new Event('resize'));}window.addEventListener('orientationchange',function(){setTimeout(syncViewport,50);setTimeout(syncViewport,180);setTimeout(syncViewport,380);});if(window.visualViewport){window.visualViewport.addEventListener('resize',syncViewport);}})();</script>
 	</head>
 	<body>
@@ -138,14 +226,14 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png?v=20261028180709" alt="">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png?v=20261028182741" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
-		<script src="index.js?v=20261028180709"></script>
+		<script src="index.js?v=20261028182741"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck?v=20261028180709":55944176,"index.wasm?v=20261028180709":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck?v=20261028182741":55945184,"index.wasm?v=20261028182741":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
