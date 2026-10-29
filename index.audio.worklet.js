@@ -1,4 +1,4 @@
-/**************************************************************************/
+﻿/**************************************************************************/
 /*  audio.worklet.js                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
@@ -184,7 +184,7 @@ class GodotProcessor extends AudioWorkletProcessor {
 					this.port.postMessage({ 'cmd': 'read', 'data': chunk });
 				}
 			} else {
-				// this.port.postMessage('Output buffer has not enough frames! Skipping output frame.'); // Uncomment this line to debug output buffer.
+				for (let ch = 0; ch < output.length; ch++) { output[ch].fill(0); } if (!this.threads) { this._underrunCount = (this._underrunCount || 0) + 1; if (this._underrunCount % 16 === 1) { this.port.postMessage({ 'cmd': 'read', 'data': chunk }); } }
 			}
 		}
 		this.process_notify();
@@ -211,3 +211,4 @@ class GodotProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('godot-processor', GodotProcessor);
+
