@@ -88,7 +88,7 @@ class RingBuffer {
 			Atomics.add(this.avail, 0, to_write);
 			Atomics.notify(this.avail, 0);
 		} else {
-			this.avail += to_write;
+			this.avail += to_write; if (this.avail > this.buffer.length) { this.avail = this.buffer.length; this.rpos = this.wpos; }
 		}
 	}
 }
@@ -184,7 +184,7 @@ class GodotProcessor extends AudioWorkletProcessor {
 					this.port.postMessage({ 'cmd': 'read', 'data': chunk });
 				}
 			} else {
-				for (let ch = 0; ch < output.length; ch++) { output[ch].fill(0); } if (!this.threads) { this._underrunCount = (this._underrunCount || 0) + 1; if (this._underrunCount % 16 === 1) { this.port.postMessage({ 'cmd': 'read', 'data': chunk }); } }
+				for (let ch = 0; ch < output.length; ch++) { output[ch].fill(0); }
 			}
 		}
 		this.process_notify();
