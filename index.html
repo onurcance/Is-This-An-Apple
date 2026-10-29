@@ -7,7 +7,7 @@
 		<meta http-equiv="Expires" content="0">
 		<script>
 		(function() {
-			var BUILD_VERSION = "20261029150148";
+			var BUILD_VERSION = "20261029154303";
 			try {
 				if (window.location.search.indexOf("_v=" + BUILD_VERSION) !== -1 && window.history && window.history.replaceState) {
 					window.history.replaceState(null, "", window.location.pathname + window.location.hash);
@@ -229,6 +229,75 @@
 					});
 				}
 			} catch (e) {}
+
+			// Web Fullscreen Bridge & One-Shot First-Click Auto-Fullscreen
+			try {
+				window.__appleFsBridgeReady = true;
+				window.__appleAutoFsDone = false;
+				window.__applePendingFsTarget = null;
+				window.__appleIsFullscreen = function() {
+					return Boolean(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+				};
+				window.__appleEnterFullscreen = function() {
+					try {
+						var el = document.documentElement || document.getElementById("canvas");
+						if (!el || window.__appleIsFullscreen()) return;
+						var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+						if (fn) {
+							var p = fn.call(el);
+							if (p && typeof p.catch === "function") p.catch(function() {});
+						}
+					} catch (e) {}
+				};
+				window.__appleExitFullscreen = function() {
+					try {
+						if (!window.__appleIsFullscreen()) return;
+						var fn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+						if (fn) {
+							var p = fn.call(document);
+							if (p && typeof p.catch === "function") p.catch(function() {});
+						}
+					} catch (e) {}
+				};
+				window.__appleRequestFsState = function(wantFs) {
+					window.__appleAutoFsDone = true;
+					var target = Boolean(wantFs);
+					window.__applePendingFsTarget = target;
+					if (target) {
+						window.__appleEnterFullscreen();
+					} else {
+						window.__appleExitFullscreen();
+					}
+				};
+				window.__appleFsListenerBound = true;
+				var onFsGesture = function(ev) {
+					if (window.__applePendingFsTarget !== null) {
+						var t = window.__applePendingFsTarget;
+						window.__applePendingFsTarget = null;
+						if (t) window.__appleEnterFullscreen();
+						else window.__appleExitFullscreen();
+						return;
+					}
+					if (!window.__appleAutoFsDone) {
+						if (ev && typeof ev.clientX === "number" && typeof ev.clientY === "number" && window.innerWidth > 0 && window.innerHeight > 0) {
+							var fromRight = window.innerWidth - ev.clientX;
+							if (ev.clientY <= Math.max(72, window.innerHeight * 0.14) && fromRight <= Math.max(150, window.innerWidth * 0.30)) {
+								return;
+							}
+						}
+						window.__appleAutoFsDone = true;
+						window.__appleEnterFullscreen();
+					}
+				};
+				var fsEvents = ["click", "mouseup", "touchend"];
+				for (var fi = 0; fi < fsEvents.length; fi++) {
+					window.addEventListener(fsEvents[fi], onFsGesture, { capture: true, passive: true });
+				}
+				window.addEventListener("keydown", function(ev) {
+					if (!ev || ev.key === "Escape" || ev.key === "F11" || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+					onFsGesture(ev);
+				}, { capture: true, passive: true });
+			} catch (e) {}
 		})();
 		</script>
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
@@ -319,8 +388,8 @@ body {
 	z-index: 1;
 }
 		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png?v=20261029150148" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png?v=20261029150148"/>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png?v=20261029154303" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png?v=20261029154303"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" /><style>html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #0d0d0d !important; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } #canvas { width: 100vw !important; height: 100vh !important; width: 100dvw !important; height: 100dvh !important; display: block; background-color: #0d0d0d !important; }</style><script>(function(){function syncViewport(){window.dispatchEvent(new Event('resize'));}window.addEventListener('orientationchange',function(){setTimeout(syncViewport,50);setTimeout(syncViewport,180);setTimeout(syncViewport,380);});if(window.visualViewport){window.visualViewport.addEventListener('resize',syncViewport);}})();</script>
 	</head>
 	<body>
@@ -333,14 +402,14 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png?v=20261029150148" alt="">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png?v=20261029154303" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
-		<script src="index.js?v=20261029150148"></script>
+		<script src="index.js?v=20261029154303"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck?v=20261029150148":55974288,"index.wasm?v=20261029150148":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck?v=20261029154303":56013304,"index.wasm?v=20261029154303":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
