@@ -7,7 +7,7 @@
 		<meta http-equiv="Expires" content="0">
 		<script>
 		(function() {
-			var BUILD_VERSION = "20261030175636";
+			var BUILD_VERSION = "20261030190138";
 			try {
 				if (window.location.search.indexOf("_v=" + BUILD_VERSION) !== -1 && window.history && window.history.replaceState) {
 					window.history.replaceState(null, "", window.location.pathname + window.location.hash);
@@ -35,16 +35,19 @@
 					}).catch(function() {});
 			} catch (e) {}
 
-			// Foolproof WebAudio Pre-Warm, Unlock, iOS Playback Session & Interrupted-State Recovery Hook
+			// Foolproof WebAudio Pre-Warm, Unlock, Focus/Blur/Lock Suspension & Recovery Hook
 			try {
 				var OrigAudioCtx = window.AudioContext || window.webkitAudioContext;
 				if (OrigAudioCtx) {
+					var isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test((navigator && navigator.userAgent) ? navigator.userAgent : "") || (navigator && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 					window.__appleAudioCtx = null;
 					window.__appleAudioWorkletReady = false;
 					window.__applePrewarmCtx = null;
 					window.__appleUserMuted = false;
+					window.__appleEverUnlocked = false;
 					window.__appleUnlockedWithBuffer = false;
 					window.__appleLastWorkletTick = 0;
+					window.__applePageFocused = !document.hidden && (isMobileUA || typeof document.hasFocus !== "function" || document.hasFocus());
 
 					var setPlaybackAudioSession = function() {
 						try {
@@ -53,7 +56,18 @@
 							}
 						} catch (e) {}
 					};
-					setPlaybackAudioSession();
+					var setAmbientAudioSession = function() {
+						try {
+							if (navigator.audioSession && navigator.audioSession.type !== "ambient") {
+								navigator.audioSession.type = "ambient";
+							}
+						} catch (e) {}
+					};
+					if (window.__applePageFocused) {
+						setPlaybackAudioSession();
+					} else {
+						setAmbientAudioSession();
+					}
 
 					var getEffectiveCtx = function() {
 						if (window.__appleAudioCtx && window.__appleAudioCtx.state !== "closed") {
@@ -85,21 +99,46 @@
 							src.start(0);
 							if (ctx === window.__appleAudioCtx && ctx.state === "running") {
 								window.__appleUnlockedWithBuffer = true;
+								window.__appleEverUnlocked = true;
 							}
 						} catch (e) {}
 					};
 
+					window.__appleIsPageFocused = function() {
+						return Boolean(window.__applePageFocused && !document.hidden);
+					};
+
 					window.__appleIsAudioRunning = function() {
 						var c = getEffectiveCtx();
-						return Boolean(c && c.state === "running" && window.__appleAudioWorkletReady !== false);
+						return Boolean(c && c.state === "running" && window.__appleAudioWorkletReady !== false && window.__appleIsPageFocused());
 					};
 
 					window.__appleSetUserMuted = function(muted) {
 						window.__appleUserMuted = Boolean(muted);
 					};
 
+					window.__appleSuspendForBlur = function() {
+						window.__applePageFocused = false;
+						setAmbientAudioSession();
+						try {
+							var ctx = getEffectiveCtx();
+							if (ctx && (ctx.state === "running" || ctx.state === "interrupted") && typeof ctx.suspend === "function") {
+								ctx.suspend().catch(function() {});
+							}
+							if (window.__applePrewarmCtx && window.__applePrewarmCtx.state === "running" && typeof window.__applePrewarmCtx.suspend === "function") {
+								window.__applePrewarmCtx.suspend().catch(function() {});
+							}
+						} catch (e) {}
+					};
+
 					window.__appleTryResumeAudio = function(fromUserGesture) {
 						try {
+							if (fromUserGesture && !document.hidden) {
+								window.__applePageFocused = true;
+							}
+							if (!window.__appleIsPageFocused() || (window.__appleUserMuted && !fromUserGesture)) {
+								return;
+							}
 							setPlaybackAudioSession();
 							var ctx = getEffectiveCtx();
 							if (ctx) {
@@ -108,9 +147,16 @@
 									var p = ctx.resume();
 									if (p && typeof p.then === "function") {
 										p.then(function() {
+											if (!window.__appleIsPageFocused()) {
+												window.__appleSuspendForBlur();
+												return;
+											}
+											window.__appleEverUnlocked = true;
 											if (fromUserGesture) playSilentUnlockBuffer(ctx);
 										}).catch(function() {});
 									}
+								} else {
+									window.__appleEverUnlocked = true;
 								}
 								if (fromUserGesture && (!window.__appleUnlockedWithBuffer || ctx.state !== "running")) {
 									playSilentUnlockBuffer(ctx);
@@ -123,6 +169,8 @@
 
 					window.__appleForceAudioKick = function() {
 						try {
+							if (document.hidden) return;
+							window.__applePageFocused = true;
 							setPlaybackAudioSession();
 							var ctx = getEffectiveCtx();
 							if (!ctx) {
@@ -130,11 +178,15 @@
 								return;
 							}
 							closePrewarmCtx();
-							if (ctx.state === "interrupted" && typeof ctx.suspend === "function") {
+							if ((ctx.state === "interrupted" || ctx.state === "suspended") && typeof ctx.suspend === "function" && ctx.state === "interrupted") {
 								ctx.suspend().then(function() {
+									if (!window.__appleIsPageFocused()) return;
 									return ctx.resume();
 								}).then(function() {
-									playSilentUnlockBuffer(ctx);
+									if (window.__appleIsPageFocused()) {
+										window.__appleEverUnlocked = true;
+										playSilentUnlockBuffer(ctx);
+									}
 								}).catch(function() {
 									window.__appleTryResumeAudio(true);
 								});
@@ -144,8 +196,33 @@
 						} catch (e) {}
 					};
 
-					var WrappedAudioContext = function(opts) {
+					window.__appleResumeFromFocus = function() {
+						if (document.hidden) return;
+						window.__applePageFocused = true;
+						if (window.__appleUserMuted) return;
 						setPlaybackAudioSession();
+						try {
+							var ctx = getEffectiveCtx();
+							if (ctx && ctx.state === "interrupted" && typeof ctx.suspend === "function") {
+								ctx.suspend().then(function() {
+									if (window.__appleIsPageFocused() && !window.__appleUserMuted) {
+										return ctx.resume();
+									}
+								}).catch(function() {
+									window.__appleTryResumeAudio(false);
+								});
+								return;
+							}
+						} catch (e) {}
+						window.__appleTryResumeAudio(false);
+					};
+
+					var WrappedAudioContext = function(opts) {
+						if (window.__appleIsPageFocused()) {
+							setPlaybackAudioSession();
+						} else {
+							setAmbientAudioSession();
+						}
 						var ctx = (opts !== undefined) ? new OrigAudioCtx(opts) : new OrigAudioCtx();
 						if (!window.__appleIsPrewarmConstructing) {
 							closePrewarmCtx();
@@ -160,7 +237,11 @@
 										if (String(moduleUrl).indexOf("audio.worklet") !== -1) {
 											window.__appleAudioWorkletReady = true;
 										}
-										window.__appleTryResumeAudio(false);
+										if (window.__appleIsPageFocused()) {
+											window.__appleTryResumeAudio(false);
+										} else {
+											window.__appleSuspendForBlur();
+										}
 									}).catch(function() {
 										window.__appleAudioWorkletReady = true;
 									});
@@ -171,16 +252,29 @@
 							}
 							setTimeout(function() {
 								window.__appleAudioWorkletReady = true;
-								window.__appleTryResumeAudio(false);
+								if (window.__appleIsPageFocused()) {
+									window.__appleTryResumeAudio(false);
+								} else {
+									window.__appleSuspendForBlur();
+								}
 							}, 220);
 							try {
 								ctx.addEventListener("statechange", function() {
-									if (ctx.state !== "running" && !document.hidden) {
+									if (ctx.state === "running") {
+										window.__appleEverUnlocked = true;
+										if (!window.__appleIsPageFocused()) {
+											window.__appleSuspendForBlur();
+										}
+									} else if (ctx.state !== "closed" && window.__appleIsPageFocused() && !window.__appleUserMuted) {
 										window.__appleTryResumeAudio(false);
 									}
 								});
 							} catch (e) {}
-							window.__appleTryResumeAudio(false);
+							if (window.__appleIsPageFocused()) {
+								window.__appleTryResumeAudio(false);
+							} else {
+								window.__appleSuspendForBlur();
+							}
 						}
 						return ctx;
 					};
@@ -194,11 +288,13 @@
 					var onUserInteraction = function(ev) {
 						var isMove = Boolean(ev && (ev.type === "pointermove" || ev.type === "mousemove"));
 						if (isMove) {
-							if (!window.__appleIsAudioRunning()) {
+							if (window.__appleIsPageFocused() && !window.__appleIsAudioRunning()) {
 								window.__appleTryResumeAudio(false);
 							}
 							return;
 						}
+						if (document.hidden) return;
+						window.__applePageFocused = true;
 						try {
 							setPlaybackAudioSession();
 							if (!getEffectiveCtx() && !window.__applePrewarmCtx) {
@@ -210,7 +306,12 @@
 						} catch (e) {
 							window.__appleIsPrewarmConstructing = false;
 						}
-						window.__appleTryResumeAudio(true);
+						var activeCtx = getEffectiveCtx();
+						if (activeCtx && activeCtx.state === "interrupted") {
+							window.__appleForceAudioKick();
+						} else {
+							window.__appleTryResumeAudio(true);
+						}
 					};
 
 					var gestureEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keyup", "click", "pointermove"];
@@ -219,13 +320,37 @@
 						document.addEventListener(gestureEvents[i], onUserInteraction, { capture: true, passive: true });
 					}
 					document.addEventListener("visibilitychange", function() {
-						if (!document.hidden) window.__appleTryResumeAudio(false);
+						if (document.hidden || document.visibilityState === "hidden") {
+							window.__appleSuspendForBlur();
+						} else if (isMobileUA || typeof document.hasFocus !== "function" || document.hasFocus()) {
+							window.__appleResumeFromFocus();
+						}
 					});
-					window.addEventListener("focus", function() {
-						window.__appleTryResumeAudio(false);
+					window.addEventListener("blur", function(ev) {
+						if (ev && ev.target && ev.target !== window && ev.target !== document) return;
+						window.__appleSuspendForBlur();
+					});
+					window.addEventListener("focus", function(ev) {
+						if (ev && ev.target && ev.target !== window && ev.target !== document) return;
+						if (!document.hidden) {
+							window.__appleResumeFromFocus();
+						}
+					});
+					window.addEventListener("pagehide", function() {
+						window.__appleSuspendForBlur();
 					});
 					window.addEventListener("pageshow", function() {
-						window.__appleTryResumeAudio(false);
+						if (!document.hidden && (isMobileUA || typeof document.hasFocus !== "function" || document.hasFocus())) {
+							window.__appleResumeFromFocus();
+						}
+					});
+					document.addEventListener("freeze", function() {
+						window.__appleSuspendForBlur();
+					});
+					document.addEventListener("resume", function() {
+						if (!document.hidden && (isMobileUA || typeof document.hasFocus !== "function" || document.hasFocus())) {
+							window.__appleResumeFromFocus();
+						}
 					});
 				}
 			} catch (e) {}
@@ -388,8 +513,8 @@ body {
 	z-index: 1;
 }
 		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png?v=20261030175636" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png?v=20261030175636"/>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png?v=20261030190138" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png?v=20261030190138"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" /><style>html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #0d0d0d !important; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } #canvas { width: 100vw !important; height: 100vh !important; width: 100dvw !important; height: 100dvh !important; display: block; background-color: #0d0d0d !important; }</style><script>(function(){function syncViewport(){window.dispatchEvent(new Event('resize'));}window.addEventListener('orientationchange',function(){setTimeout(syncViewport,50);setTimeout(syncViewport,180);setTimeout(syncViewport,380);});if(window.visualViewport){window.visualViewport.addEventListener('resize',syncViewport);}})();</script>
 	</head>
 	<body>
@@ -402,14 +527,14 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png?v=20261030175636" alt="">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png?v=20261030190138" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
-		<script src="index.js?v=20261030175636"></script>
+		<script src="index.js?v=20261030190138"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck?v=20261030175636":56215168,"index.wasm?v=20261030175636":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck?v=20261030190138":56217360,"index.wasm?v=20261030190138":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
